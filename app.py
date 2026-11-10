@@ -1,56 +1,64 @@
-import yaml
 import os
 import pathlib
-
-from flask import Flask, jsonify
-
-app = Flask(__name__)
-app.json.ensure_ascii = False
-
-VERSION = "0.3.0"
-BASE_DIR = pathlib.Path(__file__).parent
+import subprocess
+import sys
+import time
+import urllib.request
 
 
-def load_monsters():
-    path = BASE_DIR / "data" / "monsters.yaml"
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+def get_prod_root():
+    if os.environ.get("PROD_ROOT"):
+        return pathlib.Path(os.environ["PROD_ROOT"])
+    if os.name == "nt":
+        return pathlib.Path("C:/monster/live")
+    return pathlib.Path("/Users/Shared/monster/live")
 
 
-@app.route("/")
-def index():
-    return "몬스터 도감 서버 " + VERSION
+def get_prod_python(root):
+    if os.name == "nt":
+        return root / ".venv" / "Scripts" / "python.exe"
+    return root / ".venv" / "bin" / "python"
 
 
-@app.route("/health")
-def health():
-    return jsonify({"status": "ok", "version": VERSION})
+def update_code(root):
+    print("[1/4] 코드 받기 (git)")
+    app_dir = root / "app"
+    commit = os.environ.get("GIT_COMMIT", "origin/main")
+    subprocess.run(["git", "-C", str(app_dir), "fetch", "-q", "origin"], check=True)
+    subprocess.run(["git", "-C", str(app_dir), "checkout", "-q", "--force", commit], check=True)
+    subprocess.run(["git", "--no-pager", "-C", str(app_dir), "log", "-1", "--oneline"], check=True)
 
 
-@app.route("/monsters")
-def monster_list():
-    return jsonify(load_monsters())
+def install_packages(root):
+    print("[2/4] 패키지 설치")
+    python = get_prod_python(root)
+    requirements = root / "app" / "requirements.txt"
+    subprocess.run([str(python), "-m", "pip", "install", "-q", "-r", str(requirements)], check=True)
+
+
+def request_restart(root):
+    print("[3/4] 재시작 요청")
+    (root / "restart.flag").write_text(str(time.time()), encoding="utf-8")
+
+
+def check_health():
+    print("[4/4] 헬스 체크")
+    for i in range(15):
+        try:
+            with urllib.request.urlopen("http://localhost:8001/health", timeout=2) as res:
+                print("응답:", res.read().decode("utf-8"))
+                return
+        except Exception:
+            print("  응답 대기 중 (" + str(i + 1) + "초)")
+            time.sleep(1)
+    print("헬스 체크 실패: 15초 동안 운영 서버가 응답하지 않았습니다.")
+    sys.exit(1)
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5001"))
-    app.run(port=port)
-
-@app.route("/monsters/<monster_id>")
-def monster_detail(monster_id):
-    for monster in load_monsters():
-        if monster["id"] == monster_id:
-            return jsonify(monster)
-    # 반복문 밖: 끝까지 찾지 못한 경우
-    return jsonify({"error": "없는 몬스터입니다: " + monster_id}), 404
-
-@app.route("/monsters")
-def monster_list():
-    monsters = load_monsters()
-    element = request.args.get("element")
-    if element is None:
-        return jsonify(monsters)
-    result = []
-    for monster in monsters:
-        if monster["element"] == element:
-            result.append(monster)
-    return jsonify(result)
+    root = get_prod_root()
+    update_code(root)
+    install_packages(root)
+    request_restart(root)
+    check_health()
+    print("배포 완료")
