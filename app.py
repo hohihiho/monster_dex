@@ -7,7 +7,7 @@ from flask import Flask, jsonify
 app = Flask(__name__)
 app.json.ensure_ascii = False
 
-VERSION = "0.3.1"
+VERSION = "0.4.0"
 BASE_DIR = pathlib.Path(__file__).parent
 
 
@@ -30,11 +30,6 @@ def health():
 def monster_list():
     return jsonify(load_monsters())
 
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "5001"))
-    app.run(port=port)
-
 @app.route("/monsters/<monster_id>")
 def monster_detail(monster_id):
     for monster in load_monsters():
@@ -54,3 +49,24 @@ def monster_list():
         if monster["element"] == element:
             result.append(monster)
     return jsonify(result)
+
+@app.route("/dex")
+def dex():
+    rows = ""
+    for m in load_monsters():
+        cells = "<td>" + m["name"] + "</td><td>" + m["element"] + "</td><td>" + str(m["level"]) + "</td><td>" + m["weakness"] + "</td>"
+        if m["level"] >= 30:
+            cells = cells.replace("<td>", "<td><b>").replace("</td>", "</b></td>")
+        rows += "<tr>" + cells + "</tr>"
+    return (
+        "<html><head><meta charset='utf-8'><title>몬스터 도감</title></head><body>"
+        + "<h1>몬스터 도감 v" + VERSION + "</h1>"
+        + "<table border='1'><tr><th>이름</th><th>속성</th><th>레벨</th><th>약점</th></tr>"
+        + rows + "</table></body></html>"
+    )
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "5001"))
+    app.run(port=port)
+
