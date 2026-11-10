@@ -1,4 +1,4 @@
-import json
+import yaml
 import os
 import pathlib
 
@@ -7,13 +7,13 @@ from flask import Flask, jsonify
 app = Flask(__name__)
 app.json.ensure_ascii = False
 
-VERSION = "0.1.0"
+VERSION = "0.3.0"
 BASE_DIR = pathlib.Path(__file__).parent
 
 
 def load_monsters():
-    path = BASE_DIR / "data" / "monsters.json"
-    return json.loads(path.read_text(encoding="utf-8"))
+    path = BASE_DIR / "data" / "monsters.yaml"
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
 @app.route("/")
@@ -34,3 +34,23 @@ def monster_list():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5001"))
     app.run(port=port)
+
+@app.route("/monsters/<monster_id>")
+def monster_detail(monster_id):
+    for monster in load_monsters():
+        if monster["id"] == monster_id:
+            return jsonify(monster)
+    # 반복문 밖: 끝까지 찾지 못한 경우
+    return jsonify({"error": "없는 몬스터입니다: " + monster_id}), 404
+
+@app.route("/monsters")
+def monster_list():
+    monsters = load_monsters()
+    element = request.args.get("element")
+    if element is None:
+        return jsonify(monsters)
+    result = []
+    for monster in monsters:
+        if monster["element"] == element:
+            result.append(monster)
+    return jsonify(result)
